@@ -1,0 +1,69 @@
+sys := import('sys')
+
+export func initWebHost(server, options) {
+	staticUrlRoot := options.staticUrlRoot ?? '/static'
+	staticFileRoot := options.staticFileRoot ?? './static'
+	scriptsRoot := options.scripts ?? './scripts'
+
+	server.route('$staticUrlRoot/', ctx => {
+		filename := ctx.path.substr(len(staticUrlRoot))
+		if !filename {
+			filename = 'index.html'
+		}
+		ctx.sendFile('$staticFileRoot/$filename')
+	})
+
+	server.route('/', ctx => {
+		beginAt := @time.now()
+		status := 200
+		defer () => {
+			endAt := @time.now()
+			println(
+				'${endAt.format('%Y-%m-%d %H:%M:%S')}' +
+				'|INF|WEBHOST|' +
+				'${ctx.path}|${ctx.method}|$status|' + 
+				int((endAt.unixNano - beginAt.unixNano) / 1000000) + 'ms'
+			)
+		}()
+		if options.handlers {
+			for i := 0; i < len(options.handlers); i++ {
+				[prefix, handler] := options.handlers[i]
+				if ctx.path.startsWith(prefix) {
+					handler(ctx)
+					return
+				}
+			}
+		}
+		path1 := '${scriptsRoot}${ctx.path}.zgg'
+		path2 := '${scriptsRoot}${ctx.path}/_index.zgg'
+		mod := import(path1, true) ?? import(path2, true) ?? undefined
+		run := mod[ctx.method.lower()] ?? mod.run
+		if !isCallable(run) {
+			ctx.write(status = 404, '404 page not found')
+			return
+		}
+		run(ctx) ?? {
+			println('${@time.now().format('%Y-%m-%d %H:%M:%S')}|ERR|WEBHOST|${__err__.message}')
+			if __err__.stack {
+				println(__err__.stack.map(s => '    ${s.join(':')}').join('\n'))
+			}
+			ctx.write(status = 500, 'Internal error')
+			return
+		}
+	})
+}
+
+if isMain {
+	server := @http.createServer()
+	options := {}
+	optKey := nil
+	for i := 1; i < len(sys.args); i++ {
+		m := @regex.find('^\\-\\-(\\w+)=(.*)', str(sys.args[i]))
+		if len(m) != 3 {
+			continue
+		}
+		options[m[1][0]] = m[2][0]
+	}
+	initWebHost(server, options)
+	server.serve(sys.args[0])
+}
