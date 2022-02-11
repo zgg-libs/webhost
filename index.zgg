@@ -3,7 +3,14 @@ sys := import('sys')
 export func initWebHost(server, options) {
 	staticUrlRoot := options.staticUrlRoot ?? '/static'
 	staticFileRoot := options.staticFileRoot ?? './static'
-	scriptsRoot := options.scripts ?? './scripts'
+	scriptsRoot := options.scripts
+	if isUndefined(scriptsRoot) {
+		[wd, err] := @@os.Getwd()
+		scriptsRoot = when {
+			err == nil	-> '${wd.zgg}/scripts'
+			else		-> './scripts'
+		}
+	}
 
 	server.route('$staticUrlRoot/', ctx => {
 		filename := ctx.path.substr(len(staticUrlRoot))
@@ -16,6 +23,7 @@ export func initWebHost(server, options) {
 	server.route('/', ctx => {
 		beginAt := @time.now()
 		status := 200
+		wd := @sys
 		defer () => {
 			endAt := @time.now()
 			println(
@@ -43,9 +51,11 @@ export func initWebHost(server, options) {
 			return
 		}
 		run(ctx) ?? {
-			println('${@time.now().format('%Y-%m-%d %H:%M:%S')}|ERR|WEBHOST|${__err__.message}')
 			if __err__.stack {
-				println(__err__.stack.map(s => '    ${s.join(':')}').join('\n'))
+				stack := __err__.stack.map(s => '    ${s.join(':')}').join('\n')
+				log.error('WEBHOST|${__err__.message}\n$stack')
+			} else {
+				log.error('WEBHOST|${__err__.message}')
 			}
 			ctx.write(status = 500, 'Internal error')
 			return
@@ -67,3 +77,4 @@ if isMain {
 	initWebHost(server, options)
 	server.serve(sys.args[0])
 }
+
